@@ -1,69 +1,73 @@
-import os
-from antlr4 import FileStream, CommonTokenStream
+import json
+from antlr4 import FileStream, CommonTokenStream, ParserRuleContext
 from Python3.PlSqlLexer import PlSqlLexer
 from Python3.PlSqlParser import PlSqlParser
 from Python3.PlSqlParserVisitor import PlSqlParserVisitor
+from antlr4.tree.Tree import TerminalNode
 
 
-class PlSqlDependencyVisitor(PlSqlParserVisitor):
+class TableCollector(PlSqlParserVisitor):
     def __init__(self):
-        self.source_tables = set()
-        self.target_tables = set()
-        self.columns = set()
+        self.table_info = {}  # Формат: {table_name: {"role": rule_name, "sources": set()}}
 
-    def visitTable_name(self, ctx):
-        """Извлечение таблиц."""
-        table_name = ctx.getText()
-        parent_rule = ctx.parentCtx.getRuleIndex() if ctx.parentCtx else None
-        rule_name = ctx.parser.ruleNames[parent_rule] if parent_rule is not None else None
-
-        if rule_name in ("dml_table_expression_clause", "insert_into_clause"):
-            self.target_tables.add(table_name)  # Таблица-потребитель
+    def visit(self, ctx):
+        """
+        Переопределённый метод visit для обработки различных типов узлов дерева.
+        """
+        # Проверяем, является ли узел парсером правил или терминальным узлом
+        if isinstance(ctx, ParserRuleContext):  # Правильный класс для парсеров
+            node = {
+                "rule_name": ctx.getRuleIndex(),
+                "text": ctx.getText(),
+                "children": [self.visit(c) for c in ctx.children] if ctx.children else []
+            }
+        elif isinstance(ctx, TerminalNode):  # Для терминальных узлов
+            node = {
+                "rule_name": None,  # Для терминальных узлов у нас нет rule_name
+                "text": ctx.getText(),
+                "children": []
+            }
         else:
-            self.source_tables.add(table_name)  # Таблица-источник
+            node = {
+                "rule_name": "unknown",
+                "text": "unknown",
+                "children": []
+            }
 
-        return self.visitChildren(ctx)
+        return node
 
-    def visitColumn_name(self, ctx):
-        """Извлечение колонок."""
-        column_name = ctx.getText()
-        self.columns.add(column_name)
-        return self.visitChildren(ctx)
-
-    def get_dependencies(self):
-        """Возврат всех найденных зависимостей."""
-        return {
-            "source_tables": self.source_tables,
-            "target_tables": self.target_tables,
-            "columns": self.columns,
-        }
+    def get_table_info(self):
+        """
+        Возвращает информацию о таблицах с их ролями и источниками.
+        """
+        return self.table_info
 
 
 def parse_plsql(file_path):
-    """Функция для парсинга PL/SQL файла."""
+    """
+    Парсит PL/SQL файл.
+    """
     input_stream = FileStream(file_path)
     lexer = PlSqlLexer(input_stream)
     token_stream = CommonTokenStream(lexer)
     parser = PlSqlParser(token_stream)
 
-    # Начальное правило грамматики
+    # Разбираем дерево
     tree = parser.sql_script()
-
-    # Обход дерева разбора
-    visitor = PlSqlDependencyVisitor()
-    visitor.visit(tree)
-    return visitor.get_dependencies()
+    collector = TableCollector()
+    parsed_tree = collector.visit(tree)
+    return parsed_tree
 
 
 if __name__ == "__main__":
     # Укажите путь к вашему SQL-файлу
-    file_path = os.path.join(
-        "/Users/sashko/Documents/GitHub/grammars-v4/sql/plsql", "load_data.sql"
-    )
+    file_path = "/Users/sashko/Documents/GitHub/grammars-v4/sql/plsql/load_data.sql"
 
-    # Парсинг и вывод зависимостей
-    dependencies = parse_plsql(file_path)
-    print("Dependencies:")
-    print("  Source Tables:", dependencies["source_tables"])
-    print("  Target Tables:", dependencies["target_tables"])
-    print("  Columns:", dependencies["columns"])
+    # Парсинг и получение дерева разбора
+    parsed_tree = parse_plsql(file_path)
+
+    # Сохранение дерева в файл output.json
+    with open('output.json', 'w') as json_file:
+        json.dump(parsed_tree, json_file, indent=2)
+
+    print("JSON сохранен в файл 'output.json'.")
