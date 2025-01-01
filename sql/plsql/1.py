@@ -10,20 +10,28 @@ class TableCollector(PlSqlParserVisitor):
     def __init__(self):
         self.table_info = {}  # Формат: {table_name: {"role": rule_name, "sources": set()}}
 
+    def visitChildren(self, ctx):
+        """
+        Переопределённый метод для обработки всех детей узла.
+        """
+        if not ctx.children:
+            return None
+        return [self.visit(child) for child in ctx.children]
+
     def visit(self, ctx):
         """
         Переопределённый метод visit для обработки различных типов узлов дерева.
         """
-        # Проверяем, является ли узел парсером правил или терминальным узлом
-        if isinstance(ctx, ParserRuleContext):  # Правильный класс для парсеров
+        if isinstance(ctx, ParserRuleContext):  # Проверяем, что это контекст правила
+            rule_name = PlSqlParser.ruleNames[ctx.getRuleIndex()]  # Получаем имя правила
             node = {
-                "rule_name": ctx.getRuleIndex(),
+                "rule_name": rule_name,
                 "text": ctx.getText(),
-                "children": [self.visit(c) for c in ctx.children] if ctx.children else []
+                "children": self.visitChildren(ctx)
             }
-        elif isinstance(ctx, TerminalNode):  # Для терминальных узлов
+        elif isinstance(ctx, TerminalNode):  # Если это терминальный узел
             node = {
-                "rule_name": None,  # Для терминальных узлов у нас нет rule_name
+                "rule_name": None,  # У терминального узла нет имени правила
                 "text": ctx.getText(),
                 "children": []
             }
@@ -47,7 +55,7 @@ def parse_plsql(file_path):
     """
     Парсит PL/SQL файл.
     """
-    input_stream = FileStream(file_path)
+    input_stream = FileStream(file_path, encoding="utf-8")
     lexer = PlSqlLexer(input_stream)
     token_stream = CommonTokenStream(lexer)
     parser = PlSqlParser(token_stream)
@@ -67,7 +75,7 @@ if __name__ == "__main__":
     parsed_tree = parse_plsql(file_path)
 
     # Сохранение дерева в файл output.json
-    with open('output.json', 'w') as json_file:
-        json.dump(parsed_tree, json_file, indent=2)
+    with open('output.json', 'w', encoding="utf-8") as json_file:
+        json.dump(parsed_tree, json_file, ensure_ascii=False, indent=2)
 
     print("JSON сохранен в файл 'output.json'.")
