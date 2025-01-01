@@ -15,4 +15,4 @@ class PlSqlParserBase(Parser):
         self._isVersion10 = value
 
     def setVersion12(self, value):
-        self._isVersion12 = value
+        self._isVersion12 = valuecd
